@@ -1,19 +1,37 @@
 import os
+
+import joblib
 import pandas as pd
 from fastapi import FastAPI
-
+from pydantic import BaseModel
+from sklearn.metrics import silhouette_score, calinski_harabasz_score
+from sklearn.metrics import davies_bouldin_score
 from kmeans import Kmeans
 from preprocess import Preprocess
-import joblib
-from pydantic import BaseModel
-from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
 app = FastAPI()
 
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Data Mining Documentation",
+        version="1.0.0",
+        description="This is for study purpose",
+        routes=app.routes,
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+
 @app.get("/")
-async def getHome():
-    return {"message": "koala panda"}
+async def home():
+    return {"message": "love koala panda"}
 
 
 class DataModel(BaseModel):
@@ -53,6 +71,19 @@ class DataModel(BaseModel):
         }
 
 
+class Scoring(BaseModel):
+    silhoutte_score: float
+    calinski_score: float
+    davies_score: float
+
+    def to_dict(self):
+        return {
+            "silhoutte_score": self.silhoutte_score,
+            "calinski_score": self.calinski_score,
+            "davies_score": self.davies_score,
+        }
+
+
 model = joblib.load('./models/model.pkl')
 
 
@@ -79,6 +110,21 @@ async def training():
         preprocess = Preprocess()
         preprocess.run()
     return {"message": "Training completed"}  # kembalikan hasil sebagai response JSON
+
+
+@app.get('/score', response_model=Scoring)
+async def score():
+    data = pd.read_csv('./data/Financials.csv')
+    predicted_clusters = model.predict(data)
+
+    # Calculate Silhouette score
+    sil_score = silhouette_score(data, predicted_clusters)
+    # Kalkulasi Calinski-Harabasz score
+    ch_score = calinski_harabasz_score(data, predicted_clusters)
+    # kalkulasi davis boulder scrore
+    db_score = davies_bouldin_score(data, predicted_clusters)
+    scoring = Scoring(silhoutte_score=sil_score, calinski_score=ch_score, davies_score=db_score)
+    return scoring
 
 
 if __name__ == '__main__':
